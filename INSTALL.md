@@ -137,16 +137,33 @@ Every user replaces the command with the absolute path to their binary. With no
 `env` block, the server inherits variables from the MCP client process. This works
 when the client was started from an environment containing the required variables.
 
-## Generated Config And Interpolation
+## Generated Config Modes
 
-Default generated config references env vars instead of writing token literals:
+Default generated config is command-only and inherits the MCP client's
+environment without writing credentials:
 
 ```bash
 ./mcp-server.exe install --target generic --print-config
 ```
 
-The current generator always includes an `env` block. Remove that block manually
-when using the command-only inheritance setup above.
+Example output:
+
+```json
+{
+  "mcpServers": {
+    "multi-mcp": {
+      "command": "D:\\Project\\mcp-server\\mcp-server.exe"
+    }
+  }
+}
+```
+
+To generate an `env` block with references, use `--env-placeholders` only when
+your MCP client documents support for `${ENV_VAR}` interpolation:
+
+```bash
+./mcp-server.exe install --target generic --print-config --env-placeholders
+```
 
 Example output:
 
@@ -172,10 +189,9 @@ clients do not support that syntax and pass the reference literally. An explicit
 literal reference also overrides a real inherited variable; `mcp-server` treats
 unresolved `${...}` values as unset.
 
-Use generated placeholder config only when your MCP client documents support for
-that interpolation syntax. Otherwise choose one of these approaches:
+Otherwise choose one of these approaches:
 
-- Remove the `env` block and let the server inherit exported variables.
+- Use the default command-only config and let the server inherit variables.
 - Use the MCP client's supported user-level secret or environment forwarding feature.
 - Use the private wrapper below for a GUI-launched client.
 - Put literal values in a private user config only as a last resort; never commit it.
@@ -295,12 +311,14 @@ Inside an MCP chat, call:
 If `doctor` reports a provider as configured but `provider_status` reports its
 variables as missing, the MCP child process did not receive the same environment.
 Check for an unexpanded `${ENV_VAR}` entry, remove unsupported `env` mappings, and
-restart or reconnect the MCP client.
+fully restart the MCP client. On Windows, `$env:NAME=...` only affects the current
+PowerShell process and children launched from it; use a persistent user variable
+or launch the MCP client from that same shell.
 
 ## Quick Workflow
 
 1. Build the binary for your OS.
 2. Set your own environment variables or create a private wrapper.
-3. Add a command-only config to the MCP client, or use generated placeholders only when the client supports them.
+3. Add the default command-only config, or use generated placeholders only when the client supports them.
 4. Restart or reconnect the MCP client.
 5. Run `provider_status` to confirm what the MCP process received.

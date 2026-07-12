@@ -1,4 +1,5 @@
 .idea/
+.ai/mcp/mcp.json
 .env
 .env.*
 *.exe

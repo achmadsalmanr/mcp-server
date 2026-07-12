@@ -60,12 +60,10 @@ Use these environment variables as needed:
 
 GitHub and GitLab can read public repositories without a token. Private repositories and write tools require a token.
 
-Generated MCP config uses `${ENV_VAR}` references by default so token literals do
-not get written into committed files. Treat that output as a client-specific
-template: some MCP clients do not expand `${ENV_VAR}`. An unresolved reference
-can override the inherited value and is treated as unset by this server. If the
-client does not explicitly support interpolation, remove the `env` block and use
-environment inheritance or a private wrapper. Use `--include-secrets` only for
+Generated MCP config is command-only by default, so it inherits the environment
+of the MCP client without writing credentials. Use `--env-placeholders` only when
+the client documents `${ENV_VAR}` interpolation; unresolved references override
+inherited values and are treated as unset. Use `--include-secrets` only for
 private user config files.
 
 ## SCM Tools

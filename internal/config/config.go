@@ -12,6 +12,8 @@ const (
 	DefaultFigmaAPIBase  = "https://api.figma.com"
 )
 
+var lookupPersistentEnvironment = lookupPersistentEnv
+
 type Config struct {
 	Bitbucket BitbucketConfig
 	GitHub    GitHubConfig
@@ -167,15 +169,58 @@ func envDefault(name, fallback string) string {
 }
 
 func env(name string) string {
-	value := strings.TrimSpace(os.Getenv(name))
-	if isEnvReference(value) {
-		return ""
+	return envFrom(name, os.Getenv, lookupPersistentEnvironment)
+}
+
+func envFrom(name string, getenv func(string) string, lookupPersistent func(string) (string, bool)) string {
+	value := strings.TrimSpace(getenv(name))
+	if usableEnvValue(value) {
+		return value
 	}
-	return value
+
+	if refName, ok := envReferenceName(value); ok {
+		if refName != "" && refName != name {
+			if refValue := strings.TrimSpace(getenv(refName)); usableEnvValue(refValue) {
+				return refValue
+			}
+			if refValue, ok := persistentEnv(refName, lookupPersistent); ok {
+				return refValue
+			}
+		}
+	}
+
+	if value, ok := persistentEnv(name, lookupPersistent); ok {
+		return value
+	}
+	return ""
+}
+
+func persistentEnv(name string, lookupPersistent func(string) (string, bool)) (string, bool) {
+	if lookupPersistent == nil {
+		return "", false
+	}
+	value, ok := lookupPersistent(name)
+	value = strings.TrimSpace(value)
+	if !ok || !usableEnvValue(value) {
+		return "", false
+	}
+	return value, true
+}
+
+func usableEnvValue(value string) bool {
+	return value != "" && !isEnvReference(value)
 }
 
 func isEnvReference(value string) bool {
-	return strings.HasPrefix(value, "${") && strings.HasSuffix(value, "}")
+	_, ok := envReferenceName(value)
+	return ok
+}
+
+func envReferenceName(value string) (string, bool) {
+	if !strings.HasPrefix(value, "${") || !strings.HasSuffix(value, "}") {
+		return "", false
+	}
+	return strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "${"), "}")), true
 }
 
 func missing(valuesAndNames ...string) []string {

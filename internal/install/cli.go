@@ -28,13 +28,18 @@ func RunInstall(args []string, opts Options) int {
 	target := fs.String("target", "generic", "target MCP client")
 	serverName := fs.String("server-name", DefaultServerName, "MCP server name")
 	command := fs.String("command", opts.Executable, "server command path")
-	includeSecrets := fs.Bool("include-secrets", false, "include current secret values instead of placeholders")
+	envPlaceholders := fs.Bool("env-placeholders", false, "include an env block with ${ENV_VAR} placeholders")
+	includeSecrets := fs.Bool("include-secrets", false, "include an env block with current environment values")
 	printConfig := fs.Bool("print-config", false, "print config JSON")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if *target != "generic" {
 		fmt.Fprintln(stderr, "only --target generic is supported in this build")
+		return 2
+	}
+	if *envPlaceholders && *includeSecrets {
+		fmt.Fprintln(stderr, "--env-placeholders and --include-secrets cannot be used together")
 		return 2
 	}
 	if *command == "" {
@@ -45,12 +50,15 @@ func RunInstall(args []string, opts Options) int {
 		}
 		*command = exe
 	}
+	serverConfig := map[string]any{
+		"command": *command,
+	}
+	if *envPlaceholders || *includeSecrets {
+		serverConfig["env"] = envBlock(opts.Config, *includeSecrets)
+	}
 	out := map[string]any{
 		"mcpServers": map[string]any{
-			*serverName: map[string]any{
-				"command": *command,
-				"env":     envBlock(opts.Config, *includeSecrets),
-			},
+			*serverName: serverConfig,
 		},
 	}
 	b, err := json.MarshalIndent(out, "", "  ")
@@ -114,16 +122,16 @@ func envBlock(cfg config.Config, includeSecrets bool) map[string]string {
 		"TESTRAIL_API_KEY":    envValue("TESTRAIL_API_KEY", cfg.TestRail.APIKey, includeSecrets),
 		"FIGMA_ACCESS_TOKEN":  envValue("FIGMA_ACCESS_TOKEN", cfg.Figma.Token, includeSecrets),
 	}
-	if cfg.GitHub.APIBase != config.DefaultGitHubAPIBase {
+	if cfg.GitHub.APIBase != "" && cfg.GitHub.APIBase != config.DefaultGitHubAPIBase {
 		env["GITHUB_API_BASE_URL"] = envValue("GITHUB_API_BASE_URL", cfg.GitHub.APIBase, includeSecrets)
 	}
-	if cfg.GitHub.WebBase != config.DefaultGitHubWebBase {
+	if cfg.GitHub.WebBase != "" && cfg.GitHub.WebBase != config.DefaultGitHubWebBase {
 		env["GITHUB_WEB_BASE_URL"] = envValue("GITHUB_WEB_BASE_URL", cfg.GitHub.WebBase, includeSecrets)
 	}
 	if cfg.GitHub.APIVersion != "" {
 		env["GITHUB_API_VERSION"] = envValue("GITHUB_API_VERSION", cfg.GitHub.APIVersion, includeSecrets)
 	}
-	if cfg.Figma.APIBase != config.DefaultFigmaAPIBase {
+	if cfg.Figma.APIBase != "" && cfg.Figma.APIBase != config.DefaultFigmaAPIBase {
 		env["FIGMA_API_BASE_URL"] = envValue("FIGMA_API_BASE_URL", cfg.Figma.APIBase, includeSecrets)
 	}
 	return env
