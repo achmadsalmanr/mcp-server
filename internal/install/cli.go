@@ -7,10 +7,11 @@ import (
 	"io"
 	"os"
 
+	"github.com/achmadsalmanr/mcp-server/internal/appinfo"
 	"github.com/achmadsalmanr/mcp-server/internal/config"
 )
 
-const DefaultServerName = "multi-git-testrail"
+const DefaultServerName = appinfo.Name
 
 type Options struct {
 	Stdout     io.Writer
@@ -111,6 +112,7 @@ func envBlock(cfg config.Config, includeSecrets bool) map[string]string {
 		"TESTRAIL_BASE_URL":   envValue("TESTRAIL_BASE_URL", cfg.TestRail.BaseURL, includeSecrets),
 		"TESTRAIL_EMAIL":      envValue("TESTRAIL_EMAIL", cfg.TestRail.Email, includeSecrets),
 		"TESTRAIL_API_KEY":    envValue("TESTRAIL_API_KEY", cfg.TestRail.APIKey, includeSecrets),
+		"FIGMA_ACCESS_TOKEN":  envValue("FIGMA_ACCESS_TOKEN", cfg.Figma.Token, includeSecrets),
 	}
 	if cfg.GitHub.APIBase != config.DefaultGitHubAPIBase {
 		env["GITHUB_API_BASE_URL"] = envValue("GITHUB_API_BASE_URL", cfg.GitHub.APIBase, includeSecrets)
@@ -120,6 +122,9 @@ func envBlock(cfg config.Config, includeSecrets bool) map[string]string {
 	}
 	if cfg.GitHub.APIVersion != "" {
 		env["GITHUB_API_VERSION"] = envValue("GITHUB_API_VERSION", cfg.GitHub.APIVersion, includeSecrets)
+	}
+	if cfg.Figma.APIBase != config.DefaultFigmaAPIBase {
+		env["FIGMA_API_BASE_URL"] = envValue("FIGMA_API_BASE_URL", cfg.Figma.APIBase, includeSecrets)
 	}
 	return env
 }

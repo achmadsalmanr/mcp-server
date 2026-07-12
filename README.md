@@ -1,6 +1,6 @@
 # mcp-server
 
-A Docker-free MCP server for working with Bitbucket pull requests, GitHub pull requests, GitLab merge requests, and TestRail.
+A Docker-free MCP server for working with Bitbucket pull requests, GitHub pull requests, GitLab merge requests, TestRail, and Figma.
 
 The server runs over MCP stdio using newline-delimited JSON-RPC. Build one local binary, point your MCP client at it, and configure only the providers you need with environment variables.
 
@@ -15,7 +15,7 @@ On Windows this produces `mcp-server.exe`.
 
 ## Configure
 
-Full install and token-safety notes are in [INSTALL.md](INSTALL.md).
+Full install, environment inheritance, GUI client, and token-safety notes are in [INSTALL.md](INSTALL.md).
 
 Print generic MCP config:
 
@@ -30,6 +30,23 @@ Run a local configuration check:
 ./mcp-server doctor --json
 ```
 
+For a shareable MCP config that never contains credentials, configure only the
+command and let the server inherit the MCP client's environment:
+
+```json
+{
+  "mcpServers": {
+    "multi-mcp": {
+      "command": "/absolute/path/to/mcp-server"
+    }
+  }
+}
+```
+
+Each user must set their own environment variables before the MCP client starts.
+GUI-launched IDEs may not load shell profiles; use the private wrapper described
+in [INSTALL.md](INSTALL.md#macoslinux-wrapper-for-gui-clients) when necessary.
+
 Use these environment variables as needed:
 
 | Provider | Environment |
@@ -39,10 +56,17 @@ Use these environment variables as needed:
 | GitHub Enterprise | `GITHUB_TOKEN`, `GITHUB_WEB_BASE_URL`, `GITHUB_API_BASE_URL`, optional `GITHUB_API_VERSION` |
 | GitLab | `GITLAB_TOKEN`, optional `GITLAB_BASE_URL` for self-managed GitLab |
 | TestRail | `TESTRAIL_BASE_URL`, `TESTRAIL_EMAIL`, `TESTRAIL_API_KEY` |
+| Figma | `FIGMA_ACCESS_TOKEN`, optional `FIGMA_API_BASE_URL` for Figma Gov |
 
 GitHub and GitLab can read public repositories without a token. Private repositories and write tools require a token.
 
-Generated MCP config uses `${ENV_VAR}` references by default so token literals do not get written into committed files. Use `--include-secrets` only for private user config files.
+Generated MCP config uses `${ENV_VAR}` references by default so token literals do
+not get written into committed files. Treat that output as a client-specific
+template: some MCP clients do not expand `${ENV_VAR}`. An unresolved reference
+can override the inherited value and is treated as unset by this server. If the
+client does not explicitly support interpolation, remove the `env` block and use
+environment inheritance or a private wrapper. Use `--include-secrets` only for
+private user config files.
 
 ## SCM Tools
 
@@ -73,6 +97,19 @@ Write tools use stale-source guards. Fetch `source_commit_hash` with `get_pr_con
 - `testrail_list_tests`
 - `testrail_add_result`
 - `testrail_add_result_for_case`
+
+## Figma Tools
+
+- `figma_get_file`
+- `figma_get_file_nodes`
+- `figma_get_images`
+- `figma_get_image_fills`
+- `figma_get_file_comments`
+- `figma_post_file_comment`
+
+Figma tools accept a file key, branch key, or full Figma file URL. Node tools can infer the node ID from URLs containing `node-id`.
+
+Use a Figma personal or plan access token in `FIGMA_ACCESS_TOKEN`. File and image tools need `file_content:read`; comment reads need `file_comments:read`; posting comments needs `file_comments:write`.
 
 ## Provider Notes
 

@@ -9,6 +9,7 @@ const (
 	DefaultGitHubAPIBase = "https://api.github.com"
 	DefaultGitHubWebBase = "https://github.com"
 	DefaultGitLabBase    = "https://gitlab.com"
+	DefaultFigmaAPIBase  = "https://api.figma.com"
 )
 
 type Config struct {
@@ -16,6 +17,7 @@ type Config struct {
 	GitHub    GitHubConfig
 	GitLab    GitLabConfig
 	TestRail  TestRailConfig
+	Figma     FigmaConfig
 }
 
 type BitbucketConfig struct {
@@ -42,6 +44,11 @@ type TestRailConfig struct {
 	BaseURL string
 	Email   string
 	APIKey  string
+}
+
+type FigmaConfig struct {
+	Token   string
+	APIBase string
 }
 
 type ProviderStatus struct {
@@ -74,6 +81,10 @@ func Load() (Config, []string) {
 			BaseURL: strings.TrimRight(env("TESTRAIL_BASE_URL"), "/"),
 			Email:   env("TESTRAIL_EMAIL"),
 			APIKey:  env("TESTRAIL_API_KEY"),
+		},
+		Figma: FigmaConfig{
+			Token:   env("FIGMA_ACCESS_TOKEN"),
+			APIBase: envDefault("FIGMA_API_BASE_URL", DefaultFigmaAPIBase),
 		},
 	}
 
@@ -128,6 +139,11 @@ func (c Config) Statuses() []ProviderStatus {
 			Configured: c.TestRail.Configured(),
 			Missing:    missing(c.TestRail.BaseURL, "TESTRAIL_BASE_URL", c.TestRail.Email, "TESTRAIL_EMAIL", c.TestRail.APIKey, "TESTRAIL_API_KEY"),
 		},
+		{
+			Name:       "figma",
+			Configured: c.Figma.Configured(),
+			Missing:    missing(c.Figma.Token, "FIGMA_ACCESS_TOKEN"),
+		},
 	}
 }
 
@@ -137,6 +153,10 @@ func (c BitbucketConfig) Configured() bool {
 
 func (c TestRailConfig) Configured() bool {
 	return c.BaseURL != "" && c.Email != "" && c.APIKey != ""
+}
+
+func (c FigmaConfig) Configured() bool {
+	return c.Token != ""
 }
 
 func envDefault(name, fallback string) string {

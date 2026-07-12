@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/achmadsalmanr/mcp-server/internal/config"
+	"github.com/achmadsalmanr/mcp-server/internal/figma"
 	"github.com/achmadsalmanr/mcp-server/internal/install"
 	"github.com/achmadsalmanr/mcp-server/internal/mcp"
 	"github.com/achmadsalmanr/mcp-server/internal/providers/bitbucket"
@@ -43,7 +44,11 @@ func main() {
 	if cfg.TestRail.Configured() {
 		tr = testrail.NewClient(cfg.TestRail.BaseURL, cfg.TestRail.Email, cfg.TestRail.APIKey)
 	}
-	server := mcp.NewServer(review.NewService(stores...), tr, cfg.Statuses(), warnings)
+	var fg *figma.Client
+	if cfg.Figma.Configured() {
+		fg = figma.NewClient(cfg.Figma.Token, cfg.Figma.APIBase)
+	}
+	server := mcp.NewServer(review.NewService(stores...), tr, fg, cfg.Statuses(), warnings)
 	if err := server.RunStdio(context.Background(), os.Stdin, os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "server stopped: %v\n", err)
 		os.Exit(1)

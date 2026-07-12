@@ -2,6 +2,7 @@
 .env
 .env.*
 *.exe
+*.exe~
 *.test
 coverage.out
 dist/

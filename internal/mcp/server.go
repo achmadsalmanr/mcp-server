@@ -8,7 +8,9 @@ import (
 	"io"
 	"strings"
 
+	"github.com/achmadsalmanr/mcp-server/internal/appinfo"
 	"github.com/achmadsalmanr/mcp-server/internal/config"
+	"github.com/achmadsalmanr/mcp-server/internal/figma"
 	"github.com/achmadsalmanr/mcp-server/internal/review"
 	"github.com/achmadsalmanr/mcp-server/internal/testrail"
 )
@@ -18,6 +20,7 @@ const protocolVersion = "2025-06-18"
 type Server struct {
 	review   *review.Service
 	testrail *testrail.Client
+	figma    *figma.Client
 	statuses []config.ProviderStatus
 	warnings []string
 	tools    []Tool
@@ -52,8 +55,8 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-func NewServer(reviewSvc *review.Service, tr *testrail.Client, statuses []config.ProviderStatus, warnings []string) *Server {
-	s := &Server{review: reviewSvc, testrail: tr, statuses: statuses, warnings: warnings}
+func NewServer(reviewSvc *review.Service, tr *testrail.Client, fg *figma.Client, statuses []config.ProviderStatus, warnings []string) *Server {
+	s := &Server{review: reviewSvc, testrail: tr, figma: fg, statuses: statuses, warnings: warnings}
 	s.registerTools()
 	return s
 }
@@ -104,8 +107,8 @@ func (s *Server) handle(ctx context.Context, raw []byte) (rpcResponse, bool) {
 				"tools": map[string]any{"listChanged": false},
 			},
 			"serverInfo": map[string]any{
-				"name":    "multi-git-testrail-mcp",
-				"version": "0.1.0",
+				"name":    appinfo.Name,
+				"version": appinfo.Version,
 			},
 		}), len(req.ID) != 0
 	case "ping":
@@ -210,6 +213,14 @@ func intProp(description string) map[string]any {
 
 func boolProp(description string) map[string]any {
 	return map[string]any{"type": "boolean", "description": description}
+}
+
+func numberProp(description string) map[string]any {
+	return map[string]any{"type": "number", "description": description}
+}
+
+func stringArrayProp(description string) map[string]any {
+	return map[string]any{"type": "array", "description": description, "items": map[string]any{"type": "string"}}
 }
 
 func enumProp(description string, values ...string) map[string]any {

@@ -10,7 +10,7 @@ import (
 )
 
 func TestInitializeAndListTools(t *testing.T) {
-	server := NewServer(review.NewService(), nil, nil, nil)
+	server := NewServer(review.NewService(), nil, nil, nil, nil)
 	input := strings.NewReader("\ufeff" + `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
 `)
@@ -29,6 +29,10 @@ func TestInitializeAndListTools(t *testing.T) {
 	result := initResp["result"].(map[string]any)
 	if result["protocolVersion"] != protocolVersion {
 		t.Fatalf("protocolVersion = %v, want %s", result["protocolVersion"], protocolVersion)
+	}
+	serverInfo := result["serverInfo"].(map[string]any)
+	if serverInfo["name"] != "multi-mcp" {
+		t.Fatalf("serverInfo.name = %v, want multi-mcp", serverInfo["name"])
 	}
 	var toolsResp map[string]any
 	if err := json.Unmarshal([]byte(lines[1]), &toolsResp); err != nil {

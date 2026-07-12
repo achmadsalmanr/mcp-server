@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/achmadsalmanr/mcp-server/internal/figma"
 	"github.com/achmadsalmanr/mcp-server/internal/review"
 	"github.com/achmadsalmanr/mcp-server/internal/testrail"
 )
@@ -12,6 +13,12 @@ import (
 func (s *Server) registerTools() {
 	s.tools = []Tool{
 		s.providerStatusTool(),
+		s.figmaGetFileTool(),
+		s.figmaGetFileNodesTool(),
+		s.figmaGetImagesTool(),
+		s.figmaGetImageFillsTool(),
+		s.figmaGetFileCommentsTool(),
+		s.figmaPostFileCommentTool(),
 		s.getPRContextTool(),
 		s.getPRDiffTool(),
 		s.listPRCommentsTool(),
@@ -46,7 +53,143 @@ func (s *Server) providerStatusTool() Tool {
 				"warnings":           s.warnings,
 				"registered_scm":     s.review.Providers(),
 				"testrail_available": s.testrail != nil && s.testrail.Configured(),
+				"figma_available":    s.figma != nil && s.figma.Configured(),
 			}, nil
+		},
+	}
+}
+
+func (s *Server) figmaGetFileTool() Tool {
+	return Tool{
+		Name:        "figma_get_file",
+		Description: "Fetch a Figma file document JSON by file key, branch key, or full Figma URL.",
+		InputSchema: objectSchema(map[string]any{
+			"file_key":    stringProp("Figma file key, branch key, or full Figma file URL."),
+			"version":     stringProp("Optional version ID. Defaults to the current version."),
+			"ids":         stringArrayProp("Optional node IDs. If set, Figma returns those subtrees and ancestors."),
+			"depth":       intProp("Optional positive traversal depth."),
+			"geometry":    enumProp("Optional geometry export mode.", "paths"),
+			"plugin_data": stringArrayProp("Optional plugin IDs and/or shared to include plugin data."),
+			"branch_data": boolProp("Return branch metadata for the requested file."),
+		}, "file_key"),
+		Annotations: readOnly(),
+		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
+			input, err := decodeArgs[figma.GetFileInput](args)
+			if err != nil {
+				return nil, err
+			}
+			return s.requireFigma().GetFile(ctx, input)
+		},
+	}
+}
+
+func (s *Server) figmaGetFileNodesTool() Tool {
+	return Tool{
+		Name:        "figma_get_file_nodes",
+		Description: "Fetch selected Figma nodes by node IDs or by a Figma URL containing node-id.",
+		InputSchema: objectSchema(map[string]any{
+			"file_key":    stringProp("Figma file key, branch key, or full Figma node URL."),
+			"ids":         stringArrayProp("Node IDs to retrieve. Optional when file_key is a Figma URL with node-id."),
+			"version":     stringProp("Optional version ID. Defaults to the current version."),
+			"depth":       intProp("Optional positive traversal depth under the selected nodes."),
+			"geometry":    enumProp("Optional geometry export mode.", "paths"),
+			"plugin_data": stringArrayProp("Optional plugin IDs and/or shared to include plugin data."),
+		}, "file_key"),
+		Annotations: readOnly(),
+		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
+			input, err := decodeArgs[figma.GetFileNodesInput](args)
+			if err != nil {
+				return nil, err
+			}
+			return s.requireFigma().GetFileNodes(ctx, input)
+		},
+	}
+}
+
+func (s *Server) figmaGetImagesTool() Tool {
+	return Tool{
+		Name:        "figma_get_images",
+		Description: "Render selected Figma nodes and return temporary image URLs.",
+		InputSchema: objectSchema(map[string]any{
+			"file_key":            stringProp("Figma file key, branch key, or full Figma node URL."),
+			"ids":                 stringArrayProp("Node IDs to render. Optional when file_key is a Figma URL with node-id."),
+			"scale":               numberProp("Optional image scale from 0.01 to 4."),
+			"format":              enumProp("Optional image format.", "jpg", "png", "svg", "pdf"),
+			"svg_outline_text":    boolProp("For SVG, render text as vector outlines."),
+			"svg_include_id":      boolProp("For SVG, include layer names as id attributes."),
+			"svg_include_node_id": boolProp("For SVG, include node IDs as data-node-id attributes."),
+			"svg_simplify_stroke": boolProp("For SVG, simplify strokes where possible."),
+			"contents_only":       boolProp("Exclude content overlapping the selected node."),
+			"use_absolute_bounds": boolProp("Use full node dimensions instead of cropped bounds."),
+			"version":             stringProp("Optional version ID. Defaults to the current version."),
+		}, "file_key"),
+		Annotations: readOnly(),
+		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
+			input, err := decodeArgs[figma.GetImagesInput](args)
+			if err != nil {
+				return nil, err
+			}
+			return s.requireFigma().GetImages(ctx, input)
+		},
+	}
+}
+
+func (s *Server) figmaGetImageFillsTool() Tool {
+	return Tool{
+		Name:        "figma_get_image_fills",
+		Description: "Return temporary download URLs for image fills used in a Figma file.",
+		InputSchema: objectSchema(map[string]any{
+			"file_key": stringProp("Figma file key, branch key, or full Figma file URL."),
+		}, "file_key"),
+		Annotations: readOnly(),
+		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
+			input, err := decodeArgs[struct {
+				FileKey string `json:"file_key"`
+			}](args)
+			if err != nil {
+				return nil, err
+			}
+			return s.requireFigma().GetImageFills(ctx, input.FileKey)
+		},
+	}
+}
+
+func (s *Server) figmaGetFileCommentsTool() Tool {
+	return Tool{
+		Name:        "figma_get_file_comments",
+		Description: "List comments left on a Figma file.",
+		InputSchema: objectSchema(map[string]any{
+			"file_key": stringProp("Figma file key, branch key, or full Figma file URL."),
+			"as_md":    boolProp("Return comment text as Markdown when Figma can provide it."),
+		}, "file_key"),
+		Annotations: readOnly(),
+		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
+			input, err := decodeArgs[figma.GetCommentsInput](args)
+			if err != nil {
+				return nil, err
+			}
+			return s.requireFigma().GetComments(ctx, input)
+		},
+	}
+}
+
+func (s *Server) figmaPostFileCommentTool() Tool {
+	return Tool{
+		Name:        "figma_post_file_comment",
+		Description: "Post a new Figma file comment or reply to an existing root comment.",
+		InputSchema: objectSchema(map[string]any{
+			"file_key":    stringProp("Figma file key, branch key, or full Figma file URL."),
+			"message":     stringProp("Text contents of the comment to post."),
+			"comment_id":  stringProp("Optional root comment ID to reply to."),
+			"client_meta": map[string]any{"type": "object", "description": "Optional Figma comment position metadata."},
+		}, "file_key", "message"),
+		Annotations: writeTool(),
+		Handler: func(ctx context.Context, args json.RawMessage) (any, error) {
+			input, err := decodeArgs[figma.PostCommentInput](args)
+			if err != nil {
+				return nil, err
+			}
+			return s.requireFigma().PostComment(ctx, input)
 		},
 	}
 }
@@ -418,6 +561,13 @@ func (s *Server) requireTestRail() *testrail.Client {
 		return testrail.NewClient("", "", "")
 	}
 	return s.testrail
+}
+
+func (s *Server) requireFigma() *figma.Client {
+	if s.figma == nil || !s.figma.Configured() {
+		return figma.NewClient("", "")
+	}
+	return s.figma
 }
 
 func prURLSchema() map[string]any {
