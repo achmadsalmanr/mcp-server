@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/achmadsalmanr/mcp-server/internal/scm"
 )
@@ -62,7 +61,7 @@ func NewClient(baseURL, email, apiKey string) *Client {
 		baseURL: strings.TrimRight(baseURL, "/"),
 		email:   email,
 		apiKey:  apiKey,
-		http:    &http.Client{Timeout: 30 * time.Second},
+		http:    scm.NewHTTPClient(),
 	}
 }
 
@@ -235,7 +234,7 @@ func (c *Client) raw(ctx context.Context, method, path string, body any) ([]byte
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, scm.MaxBodyRead))
 		return nil, &scm.APIError{Provider: "testrail", StatusCode: resp.StatusCode, Path: path, Body: string(b)}
 	}
-	b, err := io.ReadAll(resp.Body)
+	b, err := scm.ReadBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("reading TestRail response: %w", err)
 	}

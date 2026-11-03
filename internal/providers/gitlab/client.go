@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/achmadsalmanr/mcp-server/internal/diff"
 	"github.com/achmadsalmanr/mcp-server/internal/scm"
@@ -64,7 +63,7 @@ func NewClient(token, baseURL, apiBase string) *Client {
 		baseURL: baseURL,
 		apiBase: strings.TrimRight(apiBase, "/"),
 		webHost: webHost,
-		http:    &http.Client{Timeout: 30 * time.Second},
+		http:    scm.NewHTTPClient(),
 	}
 }
 
@@ -93,11 +92,7 @@ func (c *Client) parseURL(rawURL string) (MergeRequestRef, error) {
 			if err != nil {
 				return MergeRequestRef{}, fmt.Errorf("merge request IID %q is not an integer", parts[i+2])
 			}
-			project := strings.Join(parts[:i], "/")
-			if project == "" {
-				return MergeRequestRef{}, fmt.Errorf("project path must not be empty")
-			}
-			return MergeRequestRef{ProjectPath: project, IID: iid}, nil
+			return mergeRequestRef(parts[:i], iid)
 		}
 		if parts[i] == "merge_requests" {
 			if i+1 >= len(parts) {
@@ -107,14 +102,22 @@ func (c *Client) parseURL(rawURL string) (MergeRequestRef, error) {
 			if err != nil {
 				return MergeRequestRef{}, fmt.Errorf("merge request IID %q is not an integer", parts[i+1])
 			}
-			project := strings.Join(parts[:i], "/")
-			if project == "" {
-				return MergeRequestRef{}, fmt.Errorf("project path must not be empty")
-			}
-			return MergeRequestRef{ProjectPath: project, IID: iid}, nil
+			return mergeRequestRef(parts[:i], iid)
 		}
 	}
 	return MergeRequestRef{}, fmt.Errorf("URL does not match %s/{group}/{project}/-/merge_requests/{iid}: %q", c.baseURL, rawURL)
+}
+
+func mergeRequestRef(projectParts []string, iid int) (MergeRequestRef, error) {
+	if len(projectParts) == 0 {
+		return MergeRequestRef{}, fmt.Errorf("project path must not be empty")
+	}
+	for _, part := range projectParts {
+		if !scm.ValidPathSegment(part) {
+			return MergeRequestRef{}, fmt.Errorf("invalid project path segment %q", part)
+		}
+	}
+	return MergeRequestRef{ProjectPath: strings.Join(projectParts, "/"), IID: iid}, nil
 }
 
 func (c *Client) GetPullRequest(ctx context.Context, prURL string) (*scm.PullRequest, error) {
@@ -449,7 +452,7 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body any, out 
 		return &scm.APIError{Provider: c.Provider(), StatusCode: resp.StatusCode, Path: path, Body: string(b)}
 	}
 	if out != nil {
-		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		if err := json.NewDecoder(scm.LimitBody(resp.Body)).Decode(out); err != nil {
 			return fmt.Errorf("decoding response from %s: %w", path, err)
 		}
 	}
@@ -465,9 +468,9 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body any) 
 		}
 		reqBody = bytes.NewReader(b)
 	}
-	reqURL := path
-	if !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
-		reqURL = c.apiBase + path
+	reqURL, err := scm.ResolveURL(c.apiBase, path)
+	if err != nil {
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, method, reqURL, reqBody)
 	if err != nil {
@@ -511,7 +514,7 @@ func getAllPages[T any](ctx context.Context, c *Client, path string) ([]T, error
 			resp.Body.Close()
 			return nil, &scm.APIError{Provider: c.Provider(), StatusCode: resp.StatusCode, Path: next, Body: string(b)}
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+		if err := json.NewDecoder(scm.LimitBody(resp.Body)).Decode(&page); err != nil {
 			resp.Body.Close()
 			return nil, fmt.Errorf("decoding page from %s: %w", next, err)
 		}

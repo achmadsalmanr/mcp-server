@@ -1,6 +1,8 @@
 package config
 
 import (
+	"net"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -116,7 +118,46 @@ func Load() (Config, []string) {
 	}
 
 	cfg.GitLab.APIBase = envDefault("GITLAB_API_BASE_URL", strings.TrimRight(cfg.GitLab.BaseURL, "/")+"/api/v4")
+	warnings = append(warnings, cfg.securityWarnings()...)
 	return cfg, warnings
+}
+
+func (c Config) securityWarnings() []string {
+	var warnings []string
+	for _, base := range []struct{ envName, url string }{
+		{"BITBUCKET_API_BASE_URL", c.Bitbucket.APIBase},
+		{"GITHUB_API_BASE_URL", c.GitHub.APIBase},
+		{"GITLAB_BASE_URL/GITLAB_API_BASE_URL", c.GitLab.APIBase},
+		{"TESTRAIL_BASE_URL", c.TestRail.BaseURL},
+		{"FIGMA_API_BASE_URL", c.Figma.APIBase},
+	} {
+		if insecureURL(base.url) {
+			warnings = append(warnings, base.envName+" does not use https; credentials would be sent unencrypted")
+		}
+	}
+	if (c.GitHub.WebBase != DefaultGitHubWebBase) != (c.GitHub.APIBase != DefaultGitHubAPIBase) {
+		warnings = append(warnings, "set GITHUB_WEB_BASE_URL and GITHUB_API_BASE_URL together; otherwise GITHUB_TOKEN may be sent to the wrong GitHub host")
+	}
+	return warnings
+}
+
+func insecureURL(raw string) bool {
+	if raw == "" {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	return !strings.EqualFold(u.Scheme, "https") && !isLoopbackHost(u.Hostname())
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (c Config) Statuses() []ProviderStatus {

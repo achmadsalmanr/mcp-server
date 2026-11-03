@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/achmadsalmanr/mcp-server/internal/scm"
 )
@@ -80,7 +79,7 @@ func NewClient(token, apiBase string) *Client {
 	return &Client{
 		token:   strings.TrimSpace(token),
 		apiBase: strings.TrimRight(strings.TrimSpace(apiBase), "/"),
-		http:    &http.Client{Timeout: 30 * time.Second},
+		http:    scm.NewHTTPClient(),
 	}
 }
 
@@ -215,6 +214,9 @@ func ParseFileRef(raw string) (FileRef, error) {
 		return FileRef{}, fmt.Errorf("file_key is required")
 	}
 	if !strings.Contains(value, "://") {
+		if !scm.ValidPathSegment(value) {
+			return FileRef{}, fmt.Errorf("invalid Figma file key %q", value)
+		}
 		return FileRef{Key: value}, nil
 	}
 	u, err := url.Parse(value)
@@ -228,6 +230,9 @@ func ParseFileRef(raw string) (FileRef, error) {
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	if len(parts) < 2 || parts[1] == "" {
 		return FileRef{}, fmt.Errorf("URL does not contain a Figma file key: %q", raw)
+	}
+	if !scm.ValidPathSegment(parts[1]) {
+		return FileRef{}, fmt.Errorf("invalid Figma file key in URL: %q", raw)
 	}
 	ref := FileRef{Key: parts[1]}
 	if nodeID := u.Query().Get("node-id"); nodeID != "" {
@@ -348,7 +353,7 @@ func (c *Client) raw(ctx context.Context, method, path string, q url.Values, bod
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, scm.MaxBodyRead))
 		return nil, &scm.APIError{Provider: "figma", StatusCode: resp.StatusCode, Path: path, Body: string(b)}
 	}
-	b, err := io.ReadAll(resp.Body)
+	b, err := scm.ReadBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("reading Figma response: %w", err)
 	}
