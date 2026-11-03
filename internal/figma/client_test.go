@@ -161,3 +161,30 @@ func TestPostCommentBuildsPayload(t *testing.T) {
 		t.Fatalf("id = %v, want 456", got["id"])
 	}
 }
+
+func TestParseFileRefRejectsPathTraversal(t *testing.T) {
+	for _, raw := range []string{"..", "AbC/../def", "https://www.figma.com/design/%2E%2E/Product"} {
+		if _, err := ParseFileRef(raw); err == nil {
+			t.Errorf("ParseFileRef(%q) succeeded, want error", raw)
+		}
+	}
+}
+
+func TestRedirectDoesNotSendTokenToOtherHost(t *testing.T) {
+	var leaked string
+	attacker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get("X-Figma-Token")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer attacker.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, attacker.URL+"/steal", http.StatusFound)
+	}))
+	defer srv.Close()
+
+	client := NewClient("figd_token", srv.URL)
+	_, _ = client.GetFile(context.Background(), GetFileInput{FileKey: "AbCdEf123"})
+	if leaked != "" {
+		t.Fatalf("X-Figma-Token leaked through redirect: %q", leaked)
+	}
+}

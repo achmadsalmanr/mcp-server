@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLoadTreatsUnresolvedEnvReferencesAsEmpty(t *testing.T) {
 	withPersistentEnvLookup(t, nil)
@@ -72,6 +75,57 @@ func TestLoadResolvesLiteralEnvReferencesToDifferentVariableNames(t *testing.T) 
 	if cfg.GitHub.Token != "github-token" {
 		t.Fatalf("GitHub token = %q, want referenced persistent environment value", cfg.GitHub.Token)
 	}
+}
+
+func TestLoadWarnsAboutInsecureBaseURLs(t *testing.T) {
+	withPersistentEnvLookup(t, nil)
+	clearBaseURLEnv(t)
+	t.Setenv("GITLAB_BASE_URL", "http://gitlab.internal")
+	t.Setenv("TESTRAIL_BASE_URL", "http://localhost:8080")
+
+	_, warnings := Load()
+	if !containsWarning(warnings, "GITLAB_BASE_URL/GITLAB_API_BASE_URL does not use https") {
+		t.Fatalf("warnings = %q, want plain-HTTP GitLab warning", warnings)
+	}
+	if containsWarning(warnings, "TESTRAIL_BASE_URL") {
+		t.Fatalf("warnings = %q, want no warning for loopback HTTP", warnings)
+	}
+}
+
+func TestLoadWarnsAboutPartialGitHubEnterpriseConfig(t *testing.T) {
+	withPersistentEnvLookup(t, nil)
+	clearBaseURLEnv(t)
+
+	if _, warnings := Load(); containsWarning(warnings, "GITHUB_WEB_BASE_URL") {
+		t.Fatalf("warnings = %q, want none for default GitHub config", warnings)
+	}
+	t.Setenv("GITHUB_WEB_BASE_URL", "https://ghe.example.com")
+	if _, warnings := Load(); !containsWarning(warnings, "set GITHUB_WEB_BASE_URL and GITHUB_API_BASE_URL together") {
+		t.Fatalf("warnings = %q, want partial GitHub Enterprise warning", warnings)
+	}
+	t.Setenv("GITHUB_API_BASE_URL", "https://ghe.example.com/api/v3")
+	if _, warnings := Load(); containsWarning(warnings, "GITHUB_WEB_BASE_URL") {
+		t.Fatalf("warnings = %q, want none for complete GitHub Enterprise config", warnings)
+	}
+}
+
+func clearBaseURLEnv(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{
+		"BITBUCKET_API_BASE_URL", "GITHUB_API_BASE_URL", "GITHUB_WEB_BASE_URL",
+		"GITLAB_BASE_URL", "GITLAB_API_BASE_URL", "TESTRAIL_BASE_URL", "FIGMA_API_BASE_URL",
+	} {
+		t.Setenv(name, "")
+	}
+}
+
+func containsWarning(warnings []string, substr string) bool {
+	for _, warning := range warnings {
+		if strings.Contains(warning, substr) {
+			return true
+		}
+	}
+	return false
 }
 
 func withPersistentEnvLookup(t *testing.T, lookup func(string) (string, bool)) {

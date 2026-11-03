@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/achmadsalmanr/mcp-server/internal/scm"
 )
@@ -44,7 +43,7 @@ func NewClient(token, apiBase, webBase, apiVersion string) *Client {
 		webBase:    webBase,
 		webHost:    webHost,
 		apiVersion: apiVersion,
-		http:       &http.Client{Timeout: 30 * time.Second},
+		http:       scm.NewHTTPClient(),
 	}
 }
 
@@ -66,6 +65,9 @@ func (c *Client) parseURL(rawURL string) (PullRequestRef, error) {
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	if len(parts) < 4 || parts[2] != "pull" {
 		return PullRequestRef{}, fmt.Errorf("URL does not match %s/{owner}/{repo}/pull/{number}: %q", c.webBase, rawURL)
+	}
+	if !scm.ValidPathSegment(parts[0]) || !scm.ValidPathSegment(parts[1]) {
+		return PullRequestRef{}, fmt.Errorf("invalid owner or repository name in URL: %q", rawURL)
 	}
 	number, err := strconv.Atoi(parts[3])
 	if err != nil {
@@ -374,7 +376,7 @@ func (c *Client) doRaw(ctx context.Context, method, path, accept string) (string
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, scm.MaxBodyRead))
 		return "", &scm.APIError{Provider: c.Provider(), StatusCode: resp.StatusCode, Path: path, Body: string(b)}
 	}
-	b, err := io.ReadAll(resp.Body)
+	b, err := scm.ReadBody(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("reading response from %s: %w", path, err)
 	}
@@ -399,7 +401,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any,
 		return &scm.APIError{Provider: c.Provider(), StatusCode: resp.StatusCode, Path: path, Body: string(b)}
 	}
 	if out != nil {
-		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		if err := json.NewDecoder(scm.LimitBody(resp.Body)).Decode(out); err != nil {
 			return fmt.Errorf("decoding response from %s: %w", path, err)
 		}
 	}
@@ -415,9 +417,9 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body any, 
 		}
 		reqBody = bytes.NewReader(b)
 	}
-	reqURL := path
-	if !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
-		reqURL = c.apiBase + path
+	reqURL, err := scm.ResolveURL(c.apiBase, path)
+	if err != nil {
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, method, reqURL, reqBody)
 	if err != nil {
@@ -464,7 +466,7 @@ func getAllPages[T any](ctx context.Context, c *Client, path string) ([]T, error
 			resp.Body.Close()
 			return nil, &scm.APIError{Provider: c.Provider(), StatusCode: resp.StatusCode, Path: next, Body: string(b)}
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+		if err := json.NewDecoder(scm.LimitBody(resp.Body)).Decode(&page); err != nil {
 			resp.Body.Close()
 			return nil, fmt.Errorf("decoding page from %s: %w", next, err)
 		}

@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/achmadsalmanr/mcp-server/internal/scm"
 )
@@ -37,7 +36,7 @@ func NewClient(workspace, username, token, apiBase string) *Client {
 		username:  username,
 		token:     token,
 		apiBase:   strings.TrimRight(apiBase, "/"),
-		http:      &http.Client{Timeout: 30 * time.Second},
+		http:      scm.NewHTTPClient(),
 	}
 }
 
@@ -69,6 +68,9 @@ func ParseURL(rawURL string) (PullRequestRef, error) {
 	}
 	if parts[0] == "" || parts[1] == "" {
 		return PullRequestRef{}, fmt.Errorf("workspace and repo slug must not be empty")
+	}
+	if !scm.ValidPathSegment(parts[0]) || !scm.ValidPathSegment(parts[1]) {
+		return PullRequestRef{}, fmt.Errorf("invalid workspace or repo slug in URL: %q", rawURL)
 	}
 	return PullRequestRef{Workspace: parts[0], RepoSlug: parts[1], ID: id}, nil
 }
@@ -144,7 +146,7 @@ func (c *Client) GetPullRequestDiff(ctx context.Context, prURL string) (string, 
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, scm.MaxBodyRead))
 		return "", &scm.APIError{Provider: c.Provider(), StatusCode: resp.StatusCode, Path: c.prBase(ref) + "/diff", Body: string(b)}
 	}
-	b, err := io.ReadAll(resp.Body)
+	b, err := scm.ReadBody(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("reading diff response: %w", err)
 	}
@@ -475,9 +477,9 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		}
 		reqBody = bytes.NewReader(b)
 	}
-	reqURL := path
-	if !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
-		reqURL = c.apiBase + path
+	reqURL, err := scm.ResolveURL(c.apiBase, path)
+	if err != nil {
+		return err
 	}
 	req, err := http.NewRequestWithContext(ctx, method, reqURL, reqBody)
 	if err != nil {
@@ -501,7 +503,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		return &scm.APIError{Provider: c.Provider(), StatusCode: resp.StatusCode, Path: path, Body: string(b)}
 	}
 	if out != nil {
-		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		if err := json.NewDecoder(scm.LimitBody(resp.Body)).Decode(out); err != nil {
 			return fmt.Errorf("decoding response from %s: %w", path, err)
 		}
 	}
